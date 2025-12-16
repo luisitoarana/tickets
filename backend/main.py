@@ -12,19 +12,7 @@ r = None
 from database import engine, Base, get_db
 from models import Ticket 
 
-# Configuración de Redis
-#REDIS_HOST = 'localhost'
-#REDIS_PORT = 6379
 
-#try:
-   # r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
-   # r.ping()
-   # print("✅ FastAPI: Conexión con Redis establecida.")
-#except redis.exceptions.ConnectionError as e:
-   # print(f"❌ FastAPI: No se pudo conectar a Redis en {REDIS_HOST}:{REDIS_PORT}. Las tareas asíncronas no funcionarán. Error: {e}")
-   # r = None 
-
-# Crear la tabla si no existe
 Base.metadata.create_all(bind=engine) 
 
 app = FastAPI()
