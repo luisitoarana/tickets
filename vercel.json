@@ -16,6 +16,10 @@
       "dest": "/backend/main.py"
     },
     {
+      "src": "/editar/(?<id>.*)",
+      "dest": "/frontend/editar/[id]?id=$id"
+    },
+    {
       "src": "/(.*)",
       "dest": "/frontend/$1"
     }
