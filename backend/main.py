@@ -2,34 +2,30 @@
 import sys
 import os
 
-# -----------------------------------------------------------
-# 🟢 CORRECCIÓN PARA VERCEL:
-# Esto le dice a Python: "Busca archivos en la carpeta actual"
-# Sin esto, Vercel no encuentra 'database.py' ni 'models.py'
-# -----------------------------------------------------------
+# 1. Corrección de rutas para Vercel
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import json
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, APIRouter 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-# Estas variables son para Redis (si lo usas), si no, déjalas en None
+# Variables para Redis (opcional)
 redis = None
 r = None
 
-# AHORA SÍ FUNCIONARÁN ESTAS IMPORTACIONES:
+# Importaciones
 from database import engine, Base, get_db
 from models import Ticket 
 
-# --- (El resto de tu código sigue igual hacia abajo) ---
-# Asegúrate de que esta línea esté aquí:
+# Crear tablas
 Base.metadata.create_all(bind=engine) 
 
 app = FastAPI()
 
+# Configuración CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,15 +33,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Modelo de entrada para POST y PUT
+
+# 🟢 CAMBIO IMPORTANTE: Usamos un APIRouter en lugar de "app" directamente
+router = APIRouter()
+
 class TicketCreate(BaseModel):
     asunto: str
     mensaje_inicial: str
 
-# =========================
-# GET /tickets (Lista)
-# =========================
-@app.get("/tickets")
+# --- TUS ENDPOINTS (Fíjate que ahora usan @router en vez de @app) ---
+
+@router.get("/tickets")
 def obtener_tickets(db: Session = Depends(get_db)):
     try:
         tickets = db.query(Ticket).order_by(Ticket.TicketID.desc()).all()
@@ -62,16 +60,11 @@ def obtener_tickets(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener tickets: {e}")
 
-# =========================
-# GET /tickets/{ticket_id} (Detalle)
-# =========================
-@app.get("/tickets/{ticket_id}")
+@router.get("/tickets/{ticket_id}")
 def obtener_ticket_por_id(ticket_id: int, db: Session = Depends(get_db)):
     ticket = db.query(Ticket).filter(Ticket.TicketID == ticket_id).first()
-    
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
-    
     return {
         "id": ticket.TicketID,
         "asunto": ticket.Asunto,
@@ -80,10 +73,7 @@ def obtener_ticket_por_id(ticket_id: int, db: Session = Depends(get_db)):
         "fecha": ticket.FechaCreacion
     }
 
-# =========================
-# POST /tickets (Crear)
-# =========================
-@app.post("/tickets")
+@router.post("/tickets")
 def crear_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
     try:
         nuevo = Ticket(
@@ -96,71 +86,48 @@ def crear_ticket(ticket: TicketCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(nuevo)
         
-        # 🟢 LÓGICA DE REDIS (Integración)
+        # Lógica Redis (Si existe)
         if r:
-            task_data = {
-                "ticket_id": nuevo.TicketID,
-                "asunto": nuevo.Asunto,
-                "task": "Procesamiento de ticket (Generación de PDF/Email)"
-            }
-            r.rpush("task_queue", json.dumps(task_data))
-            print(f"🔔 Tarea para Ticket ID {nuevo.TicketID} enviada a Redis.")
-        else:
-            print(f"⚠️ Redis no está conectado. Tarea para Ticket ID {nuevo.TicketID} no fue enviada.")
+            task_data = {"ticket_id": nuevo.TicketID, "asunto": nuevo.Asunto}
+            try:
+                r.rpush("task_queue", json.dumps(task_data))
+            except:
+                pass # Ignoramos error de redis si falla
 
-        return {
-            "id": nuevo.TicketID,
-            "status": "creado"
-        }
+        return {"id": nuevo.TicketID, "status": "creado"}
 
     except Exception as e:
         db.rollback() 
-        raise HTTPException(status_code=500, detail=f"Error al crear ticket en la base de datos: {e}")
+        raise HTTPException(status_code=500, detail=f"Error DB: {e}")
 
-# =========================
-# PUT /tickets/{ticket_id} (ACTUALIZAR - FALTABA ESTE)
-# =========================
-@app.put("/tickets/{ticket_id}")
+@router.put("/tickets/{ticket_id}")
 def actualizar_ticket(ticket_id: int, updated_data: TicketCreate, db: Session = Depends(get_db)):
-    try:
-        ticket = db.query(Ticket).filter(Ticket.TicketID == ticket_id).first()
-        
-        if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket no encontrado")
-        
-        # 1. Aplicar los cambios
-        ticket.Asunto = updated_data.asunto
-        ticket.MensajeInicial = updated_data.mensaje_inicial
+    ticket = db.query(Ticket).filter(Ticket.TicketID == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    ticket.Asunto = updated_data.asunto
+    ticket.MensajeInicial = updated_data.mensaje_inicial
+    db.commit()
+    return {"id": ticket.TicketID, "status": "actualizado"}
 
-        # 2. Guardar en la DB
-        db.commit()
-        db.refresh(ticket)
-        
-        return {"id": ticket.TicketID, "status": "actualizado"}
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al actualizar ticket: {e}")
-
-
-# =========================
-# DELETE /tickets/{ticket_id} (Eliminar)
-# =========================
-@app.delete("/tickets/{ticket_id}")
+@router.delete("/tickets/{ticket_id}")
 def eliminar_ticket(ticket_id: int, db: Session = Depends(get_db)):
-    try:
-        ticket = db.query(Ticket).filter(Ticket.TicketID == ticket_id).first()
-        
-        if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    ticket = db.query(Ticket).filter(Ticket.TicketID == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    db.delete(ticket)
+    db.commit()
+    return {"status": "eliminado", "id": ticket_id}
 
-        db.delete(ticket)
-        db.commit()
+# 🟢 LA MAGIA FINAL:
+# Incluimos las rutas de dos formas:
+# 1. Normal (para localhost) -> /tickets
+# 2. Con prefijo /api (para Vercel) -> /api/tickets
+app.include_router(router)
+app.include_router(router, prefix="/api")
 
-        return {"status": "eliminado", "id": ticket_id}
-
-    except Exception as e:
-        db.rollback()
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=f"Error al eliminar ticket: {e}")
+# Ruta de prueba simple
+@app.get("/")
+def read_root():
+    return {"message": "API de Tickets funcionando correctamente"}
