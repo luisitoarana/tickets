@@ -1,18 +1,31 @@
+# backend/main.py
+import sys
+import os
+
+# -----------------------------------------------------------
+# 🟢 CORRECCIÓN PARA VERCEL:
+# Esto le dice a Python: "Busca archivos en la carpeta actual"
+# Sin esto, Vercel no encuentra 'database.py' ni 'models.py'
+# -----------------------------------------------------------
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import json
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
+
+# Estas variables son para Redis (si lo usas), si no, déjalas en None
 redis = None
 r = None
 
-
-# Importaciones absolutas
+# AHORA SÍ FUNCIONARÁN ESTAS IMPORTACIONES:
 from database import engine, Base, get_db
 from models import Ticket 
 
-
+# --- (El resto de tu código sigue igual hacia abajo) ---
+# Asegúrate de que esta línea esté aquí:
 Base.metadata.create_all(bind=engine) 
 
 app = FastAPI()
@@ -24,7 +37,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Modelo de entrada para POST y PUT
 class TicketCreate(BaseModel):
     asunto: str
