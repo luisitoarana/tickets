@@ -18,7 +18,7 @@ r = None
 
 # Importaciones
 from database import engine, Base, get_db
-from models import Ticket 
+from models import Ticket ,User
 
 # Crear tablas
 Base.metadata.create_all(bind=engine) 
@@ -131,3 +131,38 @@ app.include_router(router, prefix="/api")
 @app.get("/")
 def read_root():
     return {"message": "API de Tickets funcionando correctamente"}
+
+# backend/main.py (Añadir esto a tu código existente)
+
+class LoginSchema(BaseModel):
+    email: str
+    password: str
+
+class RegisterSchema(BaseModel):
+    email: str
+    password: str
+    role: str = "usuario"
+
+@router.post("/auth/register")
+def register(user: RegisterSchema, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.Email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="El email ya existe")
+    
+    nuevo_usuario = User(Email=user.email, Password=user.password, Role=user.role)
+    db.add(nuevo_usuario)
+    db.commit()
+    return {"message": "Usuario creado"}
+
+@router.post("/auth/login")
+def login(user: LoginSchema, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.Email == user.email, User.Password == user.password).first()
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+    
+    # Aquí podrías generar un JWT, por ahora devolvemos la info del usuario
+    return {
+        "userId": db_user.UserID,
+        "email": db_user.Email,
+        "role": db_user.Role
+    }
