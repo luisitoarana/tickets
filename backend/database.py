@@ -3,30 +3,25 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# =========================================================
-# 🟢 CONFIGURACIÓN DE BASE DE DATOS INTELIGENTE
-# =========================================================
+# 1. Intentamos obtener la URL de Neon desde las variables de entorno de Vercel
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Vercel es un sistema Linux (posix). Windows es (nt).
-# Además, Vercel tiene una carpeta /tmp disponible.
-if os.name == 'posix' and os.path.exists("/tmp"):
-    # ESTAMOS EN VERCEL (NUBE)
-    # Usamos 4 barras (////) para indicar una ruta absoluta en Linux
-    print("🟢 Usando base de datos en /tmp (Modo Nube)")
-    DATABASE_URL = "sqlite:////tmp/tickets.db"
+if DATABASE_URL:
+    # ESTAMOS EN VERCEL (Usando Postgres de Neon)
+    # Corrección para SQLAlchemy: postgres:// -> postgresql://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    
+    engine = create_engine(DATABASE_URL)
+    print("🟢 Conectado a PostgreSQL en la nube (Neon)")
 else:
-    # ESTAMOS EN WINDOWS (LOCAL)
-    # Usamos 3 barras (///) para ruta relativa
-    print("🟢 Usando base de datos local (Modo Windows)")
+    # ESTAMOS EN WINDOWS (Usando SQLite local)
+    print("🟢 Usando base de datos local (SQLite)")
     DATABASE_URL = "sqlite:///./tickets.db"
-
-# Crear el motor de la base de datos
-engine = create_engine(
-    DATABASE_URL, 
-    echo=True, 
-    # check_same_thread=False es necesario para SQLite en FastAPI
-    connect_args={"check_same_thread": False} 
-)
+    engine = create_engine(
+        DATABASE_URL, 
+        connect_args={"check_same_thread": False} 
+    )
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -36,7 +31,6 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-# Dependencia para obtener la DB
 def get_db():
     db = SessionLocal()
     try:
